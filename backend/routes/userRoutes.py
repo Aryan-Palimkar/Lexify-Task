@@ -1,4 +1,4 @@
-from fastapi import APIRouter,HTTPException,Request
+from fastapi import APIRouter,HTTPException,Request,Header
 from .supabaseClient import get_supabase_client
 import logging
 from fastapi.responses import JSONResponse
@@ -55,6 +55,7 @@ def login(details: loginDetails):
             raise HTTPException(status_code=401,detail="Invalid email or password")
         
         logger.info("Login successful!")
+        logger.info(f"Session after login: {supabase.auth.get_session()}")
         return {"access_token": response.session.access_token, "refresh_token":response.session.refresh_token}
 
     except AuthApiError:
@@ -66,19 +67,45 @@ def login(details: loginDetails):
 @router.post("/refresh")
 def refresh_token(request: Request):
     try:
-        refresh_token = request.headers.get("Authorization")
-        if not refresh_token:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
             raise HTTPException(status_code=400, detail="Refresh token required")
 
+        refresh_token = auth_header.split(" ")[1]
+        logger.info(f"Refreshing token with: {refresh_token}")
+
         response = supabase.auth.refresh_session(refresh_token)
+
+        # Update session after refresh
+        supabase.auth.set_session(
+            access_token=response.session.access_token,
+            refresh_token=response.session.refresh_token
+        )
+
+        logger.info(f"New Access Token: {response.session.access_token}")
+        logger.info(f"New Refresh Token: {response.session.refresh_token}")
+        logger.info(f"Session after login: {supabase.auth.get_session()}")
         return {
-            "access": response.session.access_token,
-            "refresh": response.session.refresh_token
+            "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token
         }
 
-    except AuthApiError:
+    except AuthApiError as e:
+        logger.error(f"Auth error during refresh: {e}")
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     except Exception as e:
         logger.error(f"Token refresh error: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+
+@router.post("/logout")
+def logout():
+    try:
+        supabase.auth.sign_out()
+        logger.info("User logged out successfully!")
+        return {"message": "User logged out successfully"}
+    except Exception as e:
+        logger.error(f"Error logging out: {e}")
+        raise HTTPException(status_code=500, detail="Failed to log out")
