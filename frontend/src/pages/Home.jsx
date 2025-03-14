@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../api'
-import { ACCESS_TOKEN, REFRESH_TOKEN } from '../constants'
+import { ACCESS_TOKEN } from '../constants'
 import { jwtDecode } from 'jwt-decode'
 
 export default function Home() {
@@ -13,50 +13,56 @@ export default function Home() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const messagesEndRef = useRef(null)
   const dropdownRef = useRef(null)
-  const [token, setToken] = useState(localStorage.getItem(ACCESS_TOKEN));
 
   const access_token = localStorage.getItem(ACCESS_TOKEN)
 
-  useEffect(() => {
-    // API call to get chat list
-    const user_id = jwtDecode(access_token)['sub']
-    api.get("/", {
-      params: {
-        user_id: user_id,
-      }
-    }).then((response) => {
+  const toggleDropdown = () => {
+    setDropdownOpen(!dropdownOpen)
+  }
+
+  const fetchChatList = async () => {
+    try {
+      const user_id = jwtDecode(access_token)?.sub
+      if (!user_id) return
+      
+      const response = await api.get("/", {
+        params: { user_id }
+      })
       setChatList(response.data)
-      console.log(response.data)
-    })
+    } catch (error) {
+      console.error("Failed to fetch chat list:", error)
+    }
+  }
+
+  const fetchChatMessages = async (chatId) => {
+    try {
+      const response = await api.get(`/${chatId}`)
+      const formattedData = response.data.map(item => ({
+        id: item.id,
+        sender: item.sender === "user" ? "user" : "bot",
+        content: item.content,
+        created_at: item.created_at
+      }))
+      setChatHistory(formattedData)
+    } catch (error) {
+      console.error("Failed to fetch chat messages:", error)
+    }
+  }
+
+  useEffect(() => {
+    fetchChatList()
   }, [])
 
   useEffect(() => {
-    // Load chat messages when currentChatId changes
     if (currentChatId) {
-      api.get(`/${currentChatId}`).then((response) =>{
-        try{
-          const formattedData = response.data.map(item => ({
-            id: item.id,
-            sender: item.sender === "user" ? "user" : "bot",
-            content: item.content,
-            created_at: item.created_at
-          }));
-          console.log(formattedData)
-          setChatHistory(formattedData);
-        }
-        catch (e){
-          console.log(e)
-        }
-      })
+      fetchChatMessages(currentChatId)
     }
   }, [currentChatId])
 
   useEffect(() => {
-    // Scroll to bottom when messages change
     scrollToBottom()
   }, [chatHistory])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -74,120 +80,145 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault()
-    if (!message.trim()) return
+    if (!message.trim() || !currentChatId) return
     
-    // Add user message
     const newUserMessage = {
+      id: `temp-${Date.now()}`,
       sender: "user",
       content: message,
-      timestamp: new Date().toISOString()
-    }
-
-    try{
-      api.post("/save", {
-        conv_id: currentChatId,
-        sender: "user",
-        created_at: "2025-03-09T12:42:59+00:00",
-        content: message,
-      })
-    } catch (e){
-      console.log(e)
+      created_at: new Date().toISOString()
     }
     
-    setChatHistory([...chatHistory, newUserMessage])
+    const currentMessage = message
+    setChatHistory(prev => [...prev, newUserMessage])
     setMessage('')
     setIsLoading(true)
     
-    // Simulate bot response after delay
-    setTimeout(() => {
-      const botResponse = {
-        id: chatHistory.length + 2,
+    try {
+      const response = await api.post(`/${currentChatId}/ask`, {
+        conv_id: currentChatId,
+        query_text: currentMessage,
+      })
+
+      const botMessage = {
+        id: `bot-${Date.now()}`,
         sender: "bot",
-        content: "Bot response",
-        timestamp: new Date().toISOString()
+        content: response.data,
+        created_at: new Date().toISOString(),
       }
-      
-      setChatHistory(prev => [...prev, botResponse])
+
+      setChatHistory(prev => [...prev, botMessage])
+    } catch (error) {
+      console.error("Failed to send message:", error)
+      // Add error handling UI here
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    if (!dateString) return ''
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch (e) {
+      return dateString
+    }
   }
 
-  // TODO
-  const startNewChat = () => {
-
-    const newChat = {
-      title: "New Conversation",
-      createdAt: new Date().toISOString()
+  const startNewChat = async () => {
+    try {
+      setIsLoading(true)
+      const user_id = jwtDecode(access_token)?.sub
+      if (!user_id) return
+      
+      const timestamp = new Date().toISOString()
+      const response = await api.post("/newchat", {
+        user_id,
+        created_at: timestamp,
+        updated_at: timestamp,
+        title: "New Conversation"
+      })
+      
+      const newChatId = response.data.chat_id
+      setCurrentChatId(newChatId)
+      
+      // Refresh chat list after creating new chat
+      fetchChatList()
+      setChatHistory([])
+      setModal(false)
+    } catch (error) {
+      console.error("Failed to create new chat:", error)
+    } finally {
+      setIsLoading(false)
     }
-
-    const access_token = localStorage.getItem(ACCESS_TOKEN)
-    const user_id = jwtDecode(access_token)['sub']
-    const timestamp = new Date().toISOString()
-
-    api.post("/newchat", {
-      user_id: user_id,
-      created_at: timestamp,
-      updated_at: timestamp,
-      title: "Test Title"
-    }).then((response) => {
-      setCurrentChatId(response.data.chat_id)
-    })
-    setChatList([newChat, ...chatList])
-    setChatHistory([])
-    setModal(false)
   }
 
   const selectChat = (chatId) => {
+    if (chatId === currentChatId) {
+      setModal(false)
+      return
+    }
     setCurrentChatId(chatId)
     setModal(false)
   }
 
-  const toggleDropdown = () => {
-    setDropdownOpen(!dropdownOpen)
-  }
-
   const handleLogout = async () => {
     try {
-      await api.post("/logout");
-      localStorage.clear();
-      console.log("Logged out successfully");
-      window.location.href = "/login";
-    } catch (e) {
-      console.error("Logout error:", e);
+      await api.post("/logout")
+      localStorage.clear()
+      window.location.href = "/login"
+    } catch (error) {
+      console.error("Logout error:", error)
     }
-    setDropdownOpen(false);
-  };
+    setDropdownOpen(false)
+  }
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage(e)
+    }
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-sky-50">
       <header className="flex items-center justify-between p-3 bg-white shadow-sm">
-        <div className='flex flex-row gap-3'>
-          <button className="w-9 h-9 rounded-full text-sky-700 hover:bg-sky-100" onClick={() => setModal(true)}>
+        <div className='flex flex-row gap-3 items-center'>
+          <button 
+            className="w-9 h-9 rounded-full text-sky-700 hover:bg-sky-100 flex items-center justify-center" 
+            onClick={() => setModal(true)}
+            aria-label="Open chat list"
+          >
             <i className="fa-solid fa-bars"></i>
           </button>
-          <span className="ml-2 text-2xl font-semibold text-sky-700">Lexify</span>
+          <span className="text-2xl font-semibold text-sky-700">Lexify</span>
         </div>
         <div className='mx-2 relative' ref={dropdownRef}>
-          <button onClick={toggleDropdown} className="flex items-center justify-between gap-2 cursor-pointer font-semibold border-2 border-gray-500 bg-blue-100 p-2 rounded-xl hover:bg-blue-200 transition-colors duration-200">
+          <button 
+            onClick={toggleDropdown} 
+            className="flex items-center justify-between gap-2 cursor-pointer font-semibold border-2 border-gray-500 bg-blue-100 p-2 rounded-xl hover:bg-blue-200 transition-colors duration-200"
+            aria-expanded={dropdownOpen}
+            aria-label="Profile menu"
+          >
             <span>Profile</span>
           </button>
           
           {dropdownOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg overflow-hidden transform origin-top-right transition-all duration-200 ease-out scale-100 opacity-100 z-50">
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg overflow-hidden z-50">
               <div className="py-1">
-                <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200 flex items-center gap-2">
+                <button 
+                  onClick={handleLogout} 
+                  className="w-full text-left px-4 py-2 text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200 flex items-center gap-2"
+                >
+                  <i className="fa-solid fa-sign-out-alt"></i>
                   <span>Logout</span>
                 </button>
               </div>
@@ -198,34 +229,45 @@ export default function Home() {
       
       {/* Chat History Modal */}
       {modal && (
-        <div className="fixed inset-0 bg-transparent bg-opacity-30 backdrop-blur-sm z-50 flex items-start justify-center">
-          <div className="bg-white w-full max-w-md mt-16 rounded-lg shadow-xl">
+        <div className="fixed inset-0 bg-transparent bg-opacity-30 backdrop-blur-sm z-50 flex items-start justify-center" onClick={(e) => {
+          if (e.target === e.currentTarget) setModal(false)
+        }}>
+          <div className="bg-white w-full max-w-md mt-16 rounded-lg shadow-xl" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b flex justify-between items-center">
               <h2 className="text-xl font-bold text-sky-700">Your Conversations</h2>
-              <button onClick={() => setModal(false)} className="text-gray-500 hover:text-gray-700">
+              <button 
+                onClick={() => setModal(false)} 
+                className="text-gray-500 hover:text-gray-700 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
+                aria-label="Close"
+              >
                 <i className="fa-solid fa-times"></i>
               </button>
             </div>
             <div className="p-2">
               <button 
                 onClick={startNewChat}
-                className="w-full mb-3 p-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 flex items-center justify-center gap-2"
+                disabled={isLoading}
+                className="w-full mb-3 p-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 flex items-center justify-center gap-2 disabled:bg-sky-400"
               >
                 <i className="fa-solid fa-plus"></i>
                 <span>New Conversation</span>
               </button>
               
               <div className="max-h-96 overflow-y-auto">
-                {chatList.map(chat => (
-                  <div 
-                    key={chat.id}
-                    onClick={() => selectChat(chat.id)}
-                    className={`p-3 border-b cursor-pointer hover:bg-sky-50 ${currentChatId === chat.id ? 'bg-sky-100' : ''}`}
-                  >
-                    <h3 className="font-medium text-gray-800">{chat.title}</h3>
-                    <p className="text-sm text-gray-500">{formatDate(chat.createdAt)}</p>
-                  </div>
-                ))}
+                {chatList.length > 0 ? (
+                  chatList.map(chat => (
+                    <div 
+                      key={chat.id}
+                      onClick={() => selectChat(chat.id)}
+                      className={`p-3 border-b cursor-pointer hover:bg-sky-50 ${currentChatId === chat.id ? 'bg-sky-100' : ''}`}
+                    >
+                      <h3 className="font-medium text-gray-800">{chat.title || "Untitled Conversation"}</h3>
+                      <p className="text-sm text-gray-500">{formatDate(chat.createdAt || chat.created_at)}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-center py-4 text-gray-500">No conversations yet</p>
+                )}
               </div>
             </div>
           </div>
@@ -236,52 +278,63 @@ export default function Home() {
         {/* Chat Messages */}
         {currentChatId ? (
           <div className="flex-1 flex flex-col max-w-5xl w-full mx-auto">
-            <div className="flex-1 overflow-y-auto bg-white rounded-lg shadow p-4 mb-4">
-              <div className="space-y-4">
-                {chatHistory.map(msg => (
-                  <div 
-                    key={msg.id} 
-                    className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
+            <div className="flex-1 overflow-y-auto bg-white rounded-lg shadow p-4 mb-4 min-h-[70vh]">
+              {chatHistory.length > 0 ? (
+                <div className="space-y-4">
+                  {chatHistory.map(msg => (
                     <div 
-                      className={`max-w-3/4 rounded-lg p-3 ${
-                        msg.sender === 'user' 
-                          ? 'bg-sky-600 text-white' 
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
+                      key={msg.id} 
+                      className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <p className="whitespace-pre-line">{msg.content}</p>
-                    </div>
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-gray-100 text-gray-800 rounded-lg p-3">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                      <div 
+                        className={`max-w-xl rounded-lg p-3 ${
+                          msg.sender === 'user' 
+                            ? 'bg-sky-600 text-white' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        <p className="whitespace-pre-line break-words">{msg.content}</p>
+                        <div className="text-xs mt-1 text-right opacity-70">
+                          {formatDate(msg.created_at)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                  ))}
+                  {isLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-gray-100 text-gray-800 rounded-lg p-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-gray-500">Start your conversation with Lexify</p>
+                </div>
+              )}
             </div>
             
             {/* Message Input */}
             <form onSubmit={handleSendMessage} className="flex">
-              <input
-                type="text"
+              <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type your message here..."
-                className="flex-1 p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                onKeyDown={handleKeyDown}
+                placeholder="Type your message here... (Press Enter to send)"
+                className="flex-1 p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[50px] max-h-[150px] resize-y"
+                rows={1}
               />
               <button
                 type="submit"
                 disabled={!message.trim() || isLoading}
-                className="bg-sky-600 text-white p-3 rounded-r-lg hover:bg-sky-600 disabled:bg-sky-400"
+                className="bg-sky-600 text-white p-3 rounded-r-lg hover:bg-sky-700 disabled:bg-sky-400 flex items-center justify-center min-w-[50px]"
+                aria-label="Send message"
               >
                 <i className="fa-solid fa-paper-plane"></i>
               </button>
@@ -295,7 +348,8 @@ export default function Home() {
             </div>
             <button 
               onClick={startNewChat}
-              className="px-6 py-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 flex items-center gap-2"
+              disabled={isLoading}
+              className="px-6 py-3 bg-sky-600 text-white rounded-lg hover:bg-sky-700 flex items-center gap-2 disabled:bg-sky-400"
             >
               <i className="fa-solid fa-plus"></i>
               <span>Start a New Conversation</span>
