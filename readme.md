@@ -39,6 +39,19 @@ cp .env.example .env
 npm install
 npm run dev
 ```
+
+## Environment Variables
+
+```bash
+# Frontend .env
+ VITE_API_URL="http://127.0.0.1:8000"
+ VITE_SUPABASE_URL=your_url
+ VITE_SUPABASE_KEY=your_key
+# Backend .env
+ SUPABASE_URL = your_url
+ SUPABASE_KEY = your_key
+ GEMINI_API_KEY = your_api_key
+```
     
 ## Screenshots
 
@@ -87,17 +100,3 @@ In our project, we used LangChain to:
 - [Pradyun D](https://github.com/Prady007-1981)
 - [Aryan Palimkar](https://github.com/Aryan-Palimkar)
 - [Vivek Kashyap](https://github.com/Vivek-k7)
-
-
-## Environment Variables
-
-```bash
-# Frontend .env
- VITE_API_URL="http://127.0.0.1:8000"
- VITE_SUPABASE_URL=your_url
- VITE_SUPABASE_KEY=your_key
-# Backend .env
- SUPABASE_URL = your_url
- SUPABASE_KEY = your_key
- GEMINI_API_KEY = your_api_key
-```
