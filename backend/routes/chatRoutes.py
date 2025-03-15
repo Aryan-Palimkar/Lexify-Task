@@ -5,7 +5,14 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise HTTPException(status_code=500, detail="GEMINI_API_KEY not found in environment variables")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -55,28 +62,7 @@ def load_messages(conv_id:int):
 
     except Exception as e:
         logger.error(f"Error fetching messages: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch messages.")
-
-# @router.post("/save")
-# def save_message(payload: dict):
-#     try:
-#         conv_id = payload["conv_id"]
-#         data = {
-#             "conv_id": conv_id, 
-#             "sender": payload["sender"],
-#             "content": payload["content"],
-#             "created_at": payload['created_at']
-#         }
-#         response = supabase.table("Messages").insert(data).execute()
-        
-        
-#         logger.info(f"Message saved successfully in conversation no: {conv_id}!")
-#         return {"message": "Message saved successfully"}
-    
-#     except Exception as e:
-#         logger.error(f"Error saving message: {e}")
-#         raise HTTPException(status_code=500, detail="Failed to save message")
-    
+        raise HTTPException(status_code=500, detail="Failed to fetch messages.")   
 
 @router.post("/newchat")
 def startNewChat(payload: dict):
@@ -100,7 +86,10 @@ def startNewChat(payload: dict):
 PROMPT_TEMPLATE = '''
 You are a legal assistant that helps users understand legal terms and documents.
 Based on the following information retrieved from the database, provide a clear, concise,
-and user-friendly response to the user's question.
+Make it seem like a natural conversation and not like a bot-human interaction while being professional.
+Do not ever mention "Based on the documents" or anything similar.
+{sources} will be in the form - "pdf_name" - "Page xyz"
+Return the source along with page number at the end
 
 - Only use the provided data to enhance the response.
 - If a legal definition is missing from the retrieved data, you may provide a general definition.
@@ -138,10 +127,18 @@ def query_rag(request: query,conv_id:int):
 
     context_text = "\n\n---\n\n".join([item["content"] for item in results.data])
 
-    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    prompt = prompt_template.format(context=context_text, question=request.query_text)
+    # Extract sources properly (PDF name and page number)
+    sources = []
+    for item in results.data:
+        metadata_source = item.get("id", "Unknown")
+        if "data\\" in metadata_source:
+            pdf_name = metadata_source.split("\\")[-1].split(".pdf")[0]  # Extracts PDF name
+            sources.append(f"{pdf_name} - Page {item.get('page', 'Unknown')}")
 
-    model = GoogleGenerativeAI(model="gemini-2.0-flash", api_key="AIzaSyBhocJdQ4GOt3wrorTz4dxqdmIGNUZNlrQ")
+    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+    prompt = prompt_template.format(context=context_text, question=request.query_text, sources=sources)
+
+    model = GoogleGenerativeAI(model="gemini-2.0-flash", api_key=GEMINI_API_KEY)
     response_text = model.invoke(prompt)
 
     sources = [item["metadata"]["id"] for item in results.data]

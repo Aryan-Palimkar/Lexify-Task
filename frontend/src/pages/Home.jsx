@@ -49,16 +49,19 @@ export default function Home() {
     }
   }
 
+  // Fetch chat list when the component loads
   useEffect(() => {
     fetchChatList()
   }, [])
 
+  
   useEffect(() => {
     if (currentChatId) {
       fetchChatMessages(currentChatId)
     }
   }, [currentChatId])
 
+  // Auto-scroll to bottom when loading new chat
   useEffect(() => {
     scrollToBottom()
   }, [chatHistory])
@@ -112,7 +115,7 @@ export default function Home() {
       setChatHistory(prev => [...prev, botMessage])
     } catch (error) {
       console.error("Failed to send message:", error)
-      // Add error handling UI here
+      alert(error)
     } finally {
       setIsLoading(false)
     }
