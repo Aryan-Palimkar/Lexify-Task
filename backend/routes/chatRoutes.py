@@ -88,8 +88,8 @@ You are a legal assistant that helps users understand legal terms and documents.
 Based on the following information retrieved from the database, provide a clear, concise,
 Make it seem like a natural conversation and not like a bot-human interaction while being professional.
 Do not ever mention "Based on the documents" or anything similar.
-{sources} will be in the form - "pdf_name" - "Page xyz"
-Return the source along with page number at the end
+Sources will be a list with each item in the format - "data\\THE COMPANIES ACT.pdf:4:1", in this example, "THE COMPANIES ACT.pdf" is pdf file and 4 is page number
+From the Sources: {sources}, return appropriate sources at the end of response in the format - "pdfname - Page X" (replace pdfname and X with actual source).
 
 - Only use the provided data to enhance the response.
 - If a legal definition is missing from the retrieved data, you may provide a general definition.
@@ -121,29 +121,32 @@ def query_rag(request: query,conv_id:int):
         supabase.rpc("match_vectors", {"query_embedding": query_embedding, "match_count": 5})
         .execute()
     )
+    model = GoogleGenerativeAI(model="gemini-2.0-flash", api_key=GEMINI_API_KEY)
+
+    response = (
+            supabase.table("Conversations")
+            .select("title")
+            .eq("id", conv_id)
+            .execute()
+        )
+    if response.data[0]['title']=="New Conversation":
+        prompt_template = ChatPromptTemplate.from_template("Generate a very short title(it should be text, not markdown) from the given query: {query}")
+        prompt = prompt_template.format(query=request.query_text)
+        new_title = model.invoke(prompt).strip()
+        supabase.table("Conversations").update({"title": new_title}).eq("id", conv_id).execute()
 
     if not results.data:
         return "No relevant legal information was found. Try rephrasing your question or exploring related topics."
 
     context_text = "\n\n---\n\n".join([item["content"] for item in results.data])
-
-    # Extract sources properly (PDF name and page number)
-    sources = []
-    for item in results.data:
-        metadata_source = item.get("id", "Unknown")
-        if "data\\" in metadata_source:
-            pdf_name = metadata_source.split("\\")[-1].split(".pdf")[0]  # Extracts PDF name
-            sources.append(f"{pdf_name} - Page {item.get('page', 'Unknown')}")
+    sources = [item["metadata"]["id"] for item in results.data]
 
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
     prompt = prompt_template.format(context=context_text, question=request.query_text, sources=sources)
 
-    model = GoogleGenerativeAI(model="gemini-2.0-flash", api_key=GEMINI_API_KEY)
     response_text = model.invoke(prompt)
 
-    sources = [item["metadata"]["id"] for item in results.data]
-
-    formatted_response = f"Response: {response_text}\nSources: {sources}"
+    formatted_response = f"Response: {response_text}\nSources: {sources}\n"
     print(formatted_response)
 
     #add the bot's message to the database
