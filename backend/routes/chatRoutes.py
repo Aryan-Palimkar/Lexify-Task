@@ -1,5 +1,5 @@
 from fastapi import APIRouter,HTTPException, Query
-from .supabaseClient import get_supabase_client
+from supabaseClient import get_supabase_client
 import logging
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -21,6 +21,9 @@ supabase = get_supabase_client()
 
 class query(BaseModel):
     query_text : str
+
+class title(BaseModel):
+    newTitle : str
 
 def get_embedding():
     return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -64,6 +67,7 @@ def load_messages(conv_id:int):
         logger.error(f"Error fetching messages: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch messages.")   
 
+#creates a new conversation 
 @router.post("/newchat")
 def startNewChat(payload: dict):
     user_id = payload['user_id']
@@ -83,6 +87,23 @@ def startNewChat(payload: dict):
         logger.error(f"Error starting new chat: {e}")
         raise HTTPException(status_code=500, detail="Failed to start new chat")
 
+#updating the conversation title
+@router.post("/{conv_id}")
+def update_title(title:title, conv_id:int):
+    try:
+        response = (
+            supabase.table("Conversations")
+            .update({"title": title.newTitle})
+            .eq("id",conv_id)
+            .execute()
+        )
+        logger.info(f"Conversation title updated succesfully!")
+        return response.data
+
+    except Exception as e:
+        logger.error(f"Error updating the conversation {e}")
+        raise HTTPException(status_code=500, detail="Failed to update conversation.")
+    
 PROMPT_TEMPLATE = '''
 You are a legal assistant that helps users understand legal terms and documents.
 Based on the following information retrieved from the database, provide a clear, concise,
