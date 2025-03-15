@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import api from '../api'
 import { ACCESS_TOKEN } from '../constants'
 import { jwtDecode } from 'jwt-decode'
+import ReactMarkdown from "react-markdown";
 
 export default function Home() {
   const [modal, setModal] = useState(false)
@@ -295,8 +296,8 @@ export default function Home() {
                             ? 'bg-sky-600 text-white' 
                             : 'bg-gray-100 text-gray-800'
                         }`}
-                      >
-                        <p className="whitespace-pre-line break-words">{msg.content}</p>
+                    >
+                        <p className="whitespace-pre-line break-words"><ReactMarkdown>{msg.content}</ReactMarkdown></p>
                         <div className="text-xs mt-1 text-right opacity-70">
                           {formatDate(msg.created_at)}
                         </div>
