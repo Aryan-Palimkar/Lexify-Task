@@ -1,8 +1,6 @@
-from fastapi import APIRouter,HTTPException,Request,Header
+from fastapi import APIRouter,HTTPException,Request
 from .supabaseClient import get_supabase_client
 import logging
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel,EmailStr,Field
 from gotrue.errors import AuthApiError
 
@@ -55,7 +53,6 @@ def login(details: loginDetails):
             raise HTTPException(status_code=401,detail="Invalid email or password")
         
         logger.info("Login successful!")
-        logger.info(f"Session after login: {supabase.auth.get_session()}")
         return {"access_token": response.session.access_token, "refresh_token":response.session.refresh_token}
 
     except AuthApiError:
@@ -76,15 +73,8 @@ def refresh_token(request: Request):
 
         response = supabase.auth.refresh_session(refresh_token)
 
-        # Update session after refresh
-        supabase.auth.set_session(
-            access_token=response.session.access_token,
-            refresh_token=response.session.refresh_token
-        )
-
         logger.info(f"New Access Token: {response.session.access_token}")
         logger.info(f"New Refresh Token: {response.session.refresh_token}")
-        logger.info(f"Session after login: {supabase.auth.get_session()}")
         return {
             "access_token": response.session.access_token,
             "refresh_token": response.session.refresh_token
@@ -103,7 +93,6 @@ def refresh_token(request: Request):
 @router.post("/logout")
 def logout():
     try:
-        supabase.auth.sign_out()
         logger.info("User logged out successfully!")
         return {"message": "User logged out successfully"}
     except Exception as e:

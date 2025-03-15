@@ -29,6 +29,7 @@ const Register = () => {
       navigate("/verify");
     } catch (error) {
       console.log(error);
+      alert(error)
     } finally {
       setLoading(false);
     }
