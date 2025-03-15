@@ -1,5 +1,5 @@
 from fastapi import APIRouter,HTTPException,Request
-from .supabaseClient import get_supabase_client
+from supabaseClient import get_supabase_client
 import logging
 from pydantic import BaseModel,EmailStr,Field
 from gotrue.errors import AuthApiError
@@ -20,7 +20,7 @@ class loginDetails(BaseModel):
     email:EmailStr
     password: str= Field(...,min_length=6)
 
-
+#register a new user
 @router.post("/register")
 def register(details: userDetails):
     if details.newPassword != details.confirmPassword:
@@ -40,6 +40,7 @@ def register(details: userDetails):
     logger.info("New user registered!")
     return response
 
+#login a new user
 @router.post("/login")
 def login(details: loginDetails):
     
@@ -60,7 +61,8 @@ def login(details: loginDetails):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    
+
+#update the access and refresh token
 @router.post("/refresh")
 def refresh_token(request: Request):
     try:
@@ -89,7 +91,7 @@ def refresh_token(request: Request):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-
+#logout the user
 @router.post("/logout")
 def logout():
     try:
